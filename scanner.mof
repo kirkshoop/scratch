@@ -1,0 +1,40 @@
+#pragma autorecover
+#pragma classflags("forceupdate")
+#pragma namespace("\\\\.\\root\\WMI")
+//
+// WPP Generated File
+// PDB:  ..\Debug\scanner.pdb
+// PDB:  Last Updated :2011-8-19:8:31:19:128 (UTC) [tracepdb]
+//
+
+//ModuleName = scannerScannerWppCtrlGuid	 (Init called in Function WPP_CONTROL_ANNOTATION)
+[Dynamic,
+ Description("scanner_ScannerWppCtrlGuid"),
+ guid("{CCDA22F0-D30D-432F-BD0E-CA34D1AD41EC}"),
+ locale("MS\\0x409")]
+class scannerScannerWppCtrlGuid : EventTrace
+{
+    [Description ("Enable Flags") : amended,
+        ValueDescriptions{
+             "TRACE_FLAG_ALL Flag",
+             "TRACE_FLAG_UI Flag",
+             "TRACE_FLAG_WIA Flag",
+             "TRACE_FLAG_TP Flag"},
+        DefineValues{
+             "TRACE_FLAG_ALL",
+             "TRACE_FLAG_UI",
+             "TRACE_FLAG_WIA",
+             "TRACE_FLAG_TP"},
+        Values{
+             "TRACE_FLAG_ALL",
+             "TRACE_FLAG_UI",
+             "TRACE_FLAG_WIA",
+             "TRACE_FLAG_TP"},
+        ValueMap{
+             "0x00000001",
+             "0x00000002",
+             "0x00000004",
+             "0x00000008"}: amended
+    ]
+    uint32 Flags;
+};
