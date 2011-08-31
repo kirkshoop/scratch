@@ -16,6 +16,8 @@
 #include <WindowsX.h>
 #include <unknwn.h>
 
+#include <propidl.h>
+
 // C RunTime Header Files
 #include <stdlib.h>
 #include <malloc.h>

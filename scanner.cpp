@@ -49,14 +49,13 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
 	TRACE_SCOPE("commandline: %ls", lpCmdLine);
 
 	unique_hresult hr;
-#if 1
+
 	hr.reset(CoInitialize(NULL));
 	if (!hr)
 	{
 		return FALSE;
 	}
 	ON_UNWIND_AUTO([&]{CoUninitialize();});
-#endif
 
 	unique_winerror winerror;
 	std::wstring title;

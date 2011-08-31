@@ -264,6 +264,7 @@ namespace MainWindow
 		TextParagraph::type paragraph;
 		FLOAT fontSize;
 		std::wstring fontName;
+		bool wrap;
 	};
 
 	struct Label
@@ -300,7 +301,7 @@ namespace MainWindow
 		unique_com_d2d1dwritetextlayout textLayout;
 		unique_com_d2d1solidcolorbrush blackBrush;
 
-		D2D1CellLayout CalculateLayout(D2D1Resources& resources, unique_com_d2d1hwndrendertarget& hwndRenderTarget, const snapshotOfData<uiData>& snapshot, const Label& label, D2D1_SIZE_F cell, FLOAT gutter, const D2D1CellRect& available)
+		D2D1CellLayout QueryLayout(D2D1Resources& resources, unique_com_d2d1hwndrendertarget& hwndRenderTarget, const snapshotOfData<uiData>& snapshot, const Label& label, D2D1_SIZE_F cell, FLOAT gutter, const D2D1CellRect& available)
 		{
 			unique_hresult hr;
 			TRACE_SCOPE("%!HRESULT!", hr.get());
@@ -373,11 +374,14 @@ namespace MainWindow
 				hr.throw_if();
 			}
 
-			hr.reset(textLayout->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP));
-			if (!hr)
+			if (!style.wrap)
 			{
-				Trace(TRACE_LEVEL_ERROR, "SetWordWrapping: %!HRESULT!", hr.get());
-				hr.throw_if();
+				hr.reset(textLayout->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP));
+				if (!hr)
+				{
+					Trace(TRACE_LEVEL_ERROR, "SetWordWrapping: %!HRESULT!", hr.get());
+					hr.throw_if();
+				}
 			}
 
 			unique_com_d2d1dwriteinlineobject ellipsis;
@@ -413,11 +417,6 @@ namespace MainWindow
 			result.max.columns = result.desired.columns;
 			result.max.rows = textRows;
 			return result;
-		}
-
-		D2D1CellLayout QueryLayout(D2D1Resources& resources, unique_com_d2d1hwndrendertarget& hwndRenderTarget, const snapshotOfData<uiData>& snapshot, const Label& label, D2D1_SIZE_F cell, FLOAT gutter, const D2D1CellRect& available)
-		{
-			return CalculateLayout(resources, hwndRenderTarget, snapshot, label, cell, gutter, available);
 		}
 
 		void Layout(D2D1Resources& resources, unique_com_d2d1hwndrendertarget& hwndRenderTarget, const snapshotOfData<uiData>& snapshot, const Label& label, D2D1_SIZE_F cell, FLOAT gutter, const D2D1CellSize& size)
@@ -488,11 +487,14 @@ namespace MainWindow
 				hr.throw_if();
 			}
 
-			hr.reset(textLayout->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP));
-			if (!hr)
+			if (!style.wrap)
 			{
-				Trace(TRACE_LEVEL_ERROR, "SetWordWrapping: %!HRESULT!", hr.get());
-				hr.throw_if();
+				hr.reset(textLayout->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP));
+				if (!hr)
+				{
+					Trace(TRACE_LEVEL_ERROR, "SetWordWrapping: %!HRESULT!", hr.get());
+					hr.throw_if();
+				}
 			}
 
 			unique_com_d2d1dwriteinlineobject ellipsis;
@@ -538,7 +540,7 @@ namespace MainWindow
 			style.alignment = TextAlignment::Left;
 			style.paragraph = TextParagraph::Top;
 			style.fontName = L"Gabriola";
-			style.fontSize = 72.0f;
+			style.fontSize = 24.0f;
 			label.textStyle.set(style);
 		}
 
@@ -546,143 +548,6 @@ namespace MainWindow
 
 		D2D1Resources resources;
 		D2D1Label d2d1Label;
-
-
-		unique_hresult CreateDeviceIndependentResources()
-		{
-			unique_hresult hr;
-			TRACE_SCOPE("%!HRESULT!", hr.get());
-
-			// Create a text format using Gabriola with a font size of 72.
-			// This sets the default font, weight, stretch, style, and locale.
-			hr.reset(resources.dWriteFactory->CreateTextFormat(
-				L"Gabriola",                 // Font family name.
-				NULL,                        // Font collection (NULL sets it to use the system font collection).
-				DWRITE_FONT_WEIGHT_REGULAR,
-				DWRITE_FONT_STYLE_NORMAL,
-				DWRITE_FONT_STRETCH_NORMAL,
-				72.0f,
-				L"en-us",
-				textFormat.replace()
-				));
-			if (!hr)
-			{
-				Trace(TRACE_LEVEL_ERROR, "CreateTextFormat: %!HRESULT!", hr.get());
-				return hr;
-			}
-
-			// Center align (horizontally) the text.
-			hr.reset(textFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING));
-			if (!hr)
-			{
-				Trace(TRACE_LEVEL_ERROR, "SetTextAlignment: %!HRESULT!", hr.get());
-				return hr;
-			}
-
-			// Center align (vertically) the text.
-			hr.reset(textFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR));
-			if (!hr)
-			{
-				Trace(TRACE_LEVEL_ERROR, "SetParagraphAlignment: %!HRESULT!", hr.get());
-				return hr;
-			}
-
-			return hr;
-		}
-
-		unique_hresult LayoutText(lib::range<PCWSTR> text)
-		{
-			unique_hresult hr;
-			TRACE_SCOPE("%!HRESULT!", hr.get());
-
-			// Create a text layout using the text format.
-			RECT rect = {};
-			GetClientRect(window, &rect); 
-			float width  = rect.right  / dpiScaleX;
-			float height = rect.bottom / dpiScaleY;
-			hr.reset(resources.dWriteFactory->CreateTextLayout(
-				text.begin(),      // The string to be laid out and formatted.
-				text.size(),  // The length of the string.
-				textFormat.get(),  // The text format to apply to the string (contains font information, etc).
-				width,         // The width of the layout box.
-				height,        // The height of the layout box.
-				textLayout.replace()  // The IDWriteTextLayout interface pointer.
-				));
-			if (!hr)
-			{
-				Trace(TRACE_LEVEL_ERROR, "CreateTextLayout: %!HRESULT!", hr.get());
-				return hr;
-			}
-
-			{
-				// Format the "DirectWrite" substring to be of font size 100.
-				DWRITE_TEXT_RANGE textRange = {20,        // Start index where "DirectWrite" appears.
-												6 };      // Length of the substring "Direct" in "DirectWrite".
-				hr.reset(textLayout->SetFontSize(100.0f, textRange));
-				if (!hr)
-				{
-					Trace(TRACE_LEVEL_ERROR, "SetFontSize: %!HRESULT!", hr.get());
-					return hr;
-				}
-			}
-
-			{
-				// Format the word "DWrite" to be underlined.
-				DWRITE_TEXT_RANGE textRange = {20,      // Start index where "DirectWrite" appears.
-												11 };    // Length of the substring "DirectWrite".
-				hr.reset(textLayout->SetUnderline(TRUE, textRange));
-				if (!hr)
-				{
-					Trace(TRACE_LEVEL_ERROR, "SetUnderline: %!HRESULT!", hr.get());
-					return hr;
-				}
-			}
-
-			{
-				// Format the word "DWrite" to be bold.
-				DWRITE_TEXT_RANGE textRange = {20,
-												11 };
-				hr.reset(textLayout->SetFontWeight(DWRITE_FONT_WEIGHT_BOLD, textRange));
-				if (!hr)
-				{
-					Trace(TRACE_LEVEL_ERROR, "SetFontWeight: %!HRESULT!", hr.get());
-					return hr;
-				}
-			}
-
-			// Declare a typography pointer.
-			unique_com_d2d1dwritetypography typography;
-
-			// Create a typography interface object.
-			hr.reset(resources.dWriteFactory->CreateTypography(typography.replace()));
-			if (!hr)
-			{
-				Trace(TRACE_LEVEL_ERROR, "CreateTypography: %!HRESULT!", hr.get());
-				return hr;
-			}
-
-			// Set the stylistic set.
-			DWRITE_FONT_FEATURE fontFeature = {DWRITE_FONT_FEATURE_TAG_STYLISTIC_SET_7,
-											   1};
-			hr.reset(typography->AddFontFeature(fontFeature));
-			if (!hr)
-			{
-				Trace(TRACE_LEVEL_ERROR, "AddFontFeature: %!HRESULT!", hr.get());
-				return hr;
-			}
-
-			// Set the typography for the entire string.
-			DWRITE_TEXT_RANGE textRange = {0,
-											text.size()};
-			hr.reset(textLayout->SetTypography(typography.get(), textRange));
-			if (!hr)
-			{
-				Trace(TRACE_LEVEL_ERROR, "SetTypography: %!HRESULT!", hr.get());
-				return hr;
-			}
-
-			return hr;
-		}
 
 		unique_hresult CreateDeviceResources()
 		{
@@ -741,22 +606,6 @@ namespace MainWindow
 			blackBrush.reset();
 		}
 
-		void DrawText()
-		{
-			TRACE_SCOPE("void");
-
-			D2D1_POINT_2F origin = D2D1::Point2F(
-				textBox.left,
-				textBox.top
-				);
-
-			hwndRenderTarget->DrawTextLayout(
-				origin,
-				textLayout.get(),
-				blackBrush.get()
-				);
-		}
-
 		D2D1_SIZE_F size;
 		size_t columns;
 		size_t rows;
@@ -801,8 +650,14 @@ namespace MainWindow
 			hwndRenderTarget->Clear(D2D1::ColorF(D2D1::ColorF::White));
 
 			// Call the DrawText method of this class.
-			//DrawText();
-			d2d1Label.Draw(hwndRenderTarget, resources, D2D1::Point2F(edgeWidth + gutterSize, edgeHeight + gutterSize));
+			d2d1Label.Draw(
+				hwndRenderTarget, 
+				resources, 
+				D2D1::Point2F(
+					edgeWidth + gutterSize, 
+					edgeHeight + gutterSize
+				)
+			);
 
 			size_t cursorRow = 0;
 			size_t endRow = rows;
@@ -812,9 +667,9 @@ namespace MainWindow
 				size_t endColumn = columns;
 				for (;cursorColumn != endColumn; ++cursorColumn)
 				{
-					auto cell = CalcRectF(cursorColumn, cursorRow, cursorColumn + 1, cursorRow + 1);
+					//auto cell = CalcRectF(cursorColumn, cursorRow, cursorColumn + 1, cursorRow + 1);
 
-					hwndRenderTarget->DrawRoundedRectangle(D2D1::RoundedRect(cell, 2.0, 2.0), blackBrush.get());
+					//hwndRenderTarget->DrawRoundedRectangle(D2D1::RoundedRect(cell, 2.0, 2.0), blackBrush.get());
 				}
 			}
 
@@ -844,8 +699,8 @@ namespace MainWindow
 			auto snapshot = snapshotOfData<uiData>::createSnapshot();
 
 			D2D1CellSize layout = {};
-			layout.columns = 2;
-			layout.rows = 2;
+			layout.columns = columns;
+			layout.rows = rows / 2;
 			if (hwndRenderTarget)
 			{
 				d2d1Label.Layout(resources, hwndRenderTarget, snapshot, label, cellSize, gutterSize, layout);
@@ -870,64 +725,6 @@ namespace MainWindow
 			dpiScaleX = GetDeviceCaps(screen.get().second, LOGPIXELSX) / 96.0f;
 			dpiScaleY = GetDeviceCaps(screen.get().second, LOGPIXELSY) / 96.0f;
 
-			hr.reset(CreateXmlReader(__uuidof(IXmlReader), reinterpret_cast<void**>(xmlreader.replace()), nullptr));
-			if (!hr)
-			{
-				return FALSE;
-			}
-
-			unique_com_stream stream;
-			hr.reset(FileStream::OpenFile(
-				L"main.xml",
-				stream.replace()
-			));
-			if (!hr)
-			{
-				return FALSE;
-			}
-
-			hr.reset(xmlreader->SetInput(stream.get()));
-			if (!hr)
-			{
-				return FALSE;
-			}
-
-			XmlNodeType nodeType = XmlNodeType_None; 
-			while (hr) 
-			{
-				hr.reset(xmlreader->Read(&nodeType));
-				if (hr != unique_hresult::cast(S_OK))
-				{
-					break;
-				}
-				hr.suppress();
-
-				if (nodeType == XmlNodeType_Element)
-				{
-					LPCWSTR localName = nullptr;
-					UINT localSize = 0;
-
-					hr.reset(xmlreader->GetLocalName(&localName, &localSize));
-					if (!hr)
-					{
-						return FALSE;
-					}
-					auto localRange = lib::make_range(localName, localName + localSize);
-					if (lib::as_literal(L"Component") == localRange)
-					{
-					}
-				}
-			}
-			if (!hr)
-			{
-				return FALSE;
-			}
-
-			hr = CreateDeviceIndependentResources();
-			if (!hr)
-			{
-				return FALSE;
-			}
 
 			RECT rc = {};
 			GetClientRect(
@@ -940,13 +737,6 @@ namespace MainWindow
 				static_cast<FLOAT>((rc.bottom - rc.top) / dpiScaleY)
 			);
 
-			Layout();
-
-			hr = LayoutText(lib::make_range_raw(L"Hello World using   DirectWrite!"));
-			if (!hr)
-			{
-				return FALSE;
-			}
 
 			std::tie(hr, wiadevmgr2) = lib::ComCreateInstance<IWiaDevMgr2>(CLSID_WiaDevMgr2);
 			if (!hr)
@@ -963,11 +753,39 @@ namespace MainWindow
 
 			unique_com_wiapropertystorage wiapropertystorage;
 
-			ULONG count = 0;
+			PROPSPEC query[] = {
+				{PRSPEC_PROPID, WIA_DIP_DEV_ID},
+				{PRSPEC_PROPID, WIA_DIP_DEV_NAME},
+				{PRSPEC_PROPID, WIA_DIP_DEV_DESC}
+			};
+
+			std::wstring text;
 			while (unique_hresult::make(wiaenumdevinfo->Next( 1, wiapropertystorage.replace(), NULL )).suppress() == unique_hresult::cast(S_OK))
 			{
-				wiapropertystorage->GetCount(&count);
+				PROPVARIANT result[3] = {};
+				auto resultRange = lib::make_range(result);
+				ON_UNWIND_AUTO([&]{FreePropVariantArray(resultRange.size(), resultRange.begin());});
+
+				hr.reset(wiapropertystorage->ReadMultiple(resultRange.size(), query, resultRange.begin()));
+				if (!hr)
+				{
+					return FALSE;
+				}
+
+				std::for_each(resultRange.begin(), resultRange.end(),
+					[&] (decltype(resultRange[0]) item)
+					{
+						if (item.vt == VT_BSTR)
+						{
+							text += item.bstrVal;
+							text += L"\n";
+						}
+					}
+				);
 			}
+			label.text.set(text);
+
+			Layout();
 
 			return TRUE;
 			UNREFERENCED_PARAMETER(context);
