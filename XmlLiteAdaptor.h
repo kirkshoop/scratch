@@ -1,11 +1,11 @@
 #include <xmllite.h>
 
 typedef
-	lib::unique_com_interface<IStream>::type
+	lib::wr::unique_com_interface<IStream>::type
 unique_com_stream;
 
 typedef
-	lib::unique_com_interface<IXmlReader>::type
+	lib::wr::unique_com_interface<IXmlReader>::type
 unique_com_xmlreader;
 
 
@@ -169,6 +169,6 @@ public:
     }
 
 private:
-    lib::unique_file file;
+    lib::wr::unique_file file;
     LONG refcount;
 };

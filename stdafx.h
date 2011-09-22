@@ -31,7 +31,39 @@
 #include <algorithm>
 #include <iterator>
 #include <exception>
+#include <vector>
+#include <string>
 #include <unordered_map>
+
+#pragma warning(disable: 4503) // decorated name length exceeded, name was truncated
+
+namespace UnknownObject
+{
+	struct tag;
+}
+
+template<typename Function>
+HRESULT function_contract_hresult(Function&& function)
+{
+	try
+	{
+		return std::forward<Function>(function)().suppress().get();
+	}
+	catch(const std::bad_alloc&)
+	{
+		return E_OUTOFMEMORY;
+	}
+	catch(const unique_hresult::exception& e)
+	{
+		return e.get();
+	}
+}
+
+template<typename Function, typename InterfaceTag>
+HRESULT com_function_contract_hresult(Function&& function, InterfaceTag&&, UnknownObject::tag&&)
+{
+	return function_contract_hresult(std::forward<Function>(function));
+}
 
 #define LIBRARIES_NAMESPACE libraries
 #include <libraries.h>

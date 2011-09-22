@@ -60,16 +60,51 @@ int APIENTRY wWinMain(HINSTANCE hInstance,
 	unique_winerror winerror;
 	std::wstring title;
 	std::wstring className;
-	lib::unique_close_window window;
+	lib::wr::unique_close_window window;
 
-	std::tie(winerror, title) = lib::LoadStdString(hInstance, IDS_APP_TITLE);
+#if 1
+	typedef
+		lib::wr::unique_cotask_factory<WCHAR[]>::type
+	unique_cotask_wstr;
+
+	auto helloRange = lib::rng::make_range(L"hello");
+	unique_cotask_wstr output;
+	std::tie(winerror, output) = unique_cotask_wstr::make(helloRange.size());
+	if (!winerror)
+	{
+		return FALSE;
+	}
+	stdext::checked_array_iterator< WCHAR* > checked_begin(output->begin(), output->size());
+	std::copy(helloRange.begin(), helloRange.end(), checked_begin);
+
+	typedef
+		lib::wr::unique_local_factory<std::wstring[]>::type
+	unique_local_file;
+	unique_local_file outputFile;
+	std::tie(winerror, outputFile) = unique_local_file::make(2);
 	if (!winerror)
 	{
 		return FALSE;
 	}
 
-	std::tie(winerror, className) = lib::LoadStdString(hInstance, IDC_SCANNER);
+	unique_cotask_wstr cotaskTitle;
+	std::tie(winerror, cotaskTitle) = lib::wr::LoadStdString<unique_cotask_wstr>(hInstance, IDS_APP_TITLE);
 	if (!winerror)
+	{
+		return FALSE;
+	}
+#endif
+
+	try
+	{
+		title = lib::wr::LoadStdString(hInstance, IDS_APP_TITLE);
+		className = lib::wr::LoadStdString(hInstance, IDC_SCANNER);
+	}
+	catch(const std::bad_alloc&)
+	{
+		return FALSE;
+	}
+	catch(const unique_winerror::exception&)
 	{
 		return FALSE;
 	}

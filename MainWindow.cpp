@@ -4,9 +4,59 @@
 
 #include "MainWindow.tmh"
 
+namespace UnknownObject
+{
+	struct tag {};
+
+	struct type
+		: public lib::com::refcount
+	{
+	};
+
+	lib::ifset::traits_builder<typename lib::tv::factory<IUnknown>::type, type>
+	interface_set_traits(tag&&);
+
+	type* interface_storage(type* storage, lib::ifset::interface_tag<IUnknown>&&, tag&&)
+	{
+		return storage;
+	}
+
+	typedef
+		lib::ifset::interface_set<tag>
+	object;
+}
+
 namespace MainWindow
 {
 	struct tag {};
+
+	struct D2D1RowRange
+	{
+		size_t begin;
+		size_t end;
+
+		inline size_t size() const { return end - begin;}
+	};
+
+	struct D2D1VerticalLine
+	{
+		size_t column;
+		D2D1RowRange rows;
+	};
+
+	struct D2D1ColumnRange
+	{
+		size_t begin;
+		size_t end;
+
+		inline size_t size() const { return end - begin;}
+	};
+
+	struct D2D1HorizontalLine
+	{
+		size_t row;
+		D2D1ColumnRange columns;
+	};
 
 	struct D2D1CellPoint
 	{
@@ -18,6 +68,12 @@ namespace MainWindow
 	{
 		size_t columns;
 		size_t rows;
+	};
+
+	struct D2D1CellBox
+	{
+		D2D1ColumnRange columns;
+		D2D1RowRange rows;
 	};
 
 	struct D2D1CellRect
@@ -40,7 +96,13 @@ namespace MainWindow
 			unique_hresult hr;
 			TRACE_SCOPE("%!HRESULT!", hr.get());
 
-			lib::unique_gdi_release_dc screen(std::make_pair(nullptr, GetDC(nullptr)));
+#if 1
+			auto unknownObject = lib::com::interface_cast<IUnknown>(new UnknownObject::object());
+			lib::wr::unique_com_unknown unknown;
+			unknownObject->QueryInterface(unknown.replace());
+#endif
+
+			lib::wr::unique_gdi_release_dc screen(std::make_pair(nullptr, GetDC(nullptr)));
 			dpiScaleX = GetDeviceCaps(screen.get().second, LOGPIXELSX) / 96.0f;
 			dpiScaleY = GetDeviceCaps(screen.get().second, LOGPIXELSY) / 96.0f;
 
@@ -220,7 +282,8 @@ namespace MainWindow
 		{
 			Data entry = {};
 			entry.validFrom = generationBroker<DataTag>::next();
-			entry.data = data;
+			entry.data = std::move(data);
+			// TODO: insert needs to be made atomic
 			dataHistory.emplace(dataHistory.begin(), std::move(entry));
 
 			auto cursor = dataHistory.begin();
@@ -234,6 +297,32 @@ namespace MainWindow
 				}
 			}
 		}
+
+		bool set_if(const snapshotOfData<DataTag>& snapshot, T data)
+		{
+			// TODO: test-insert needs to be made atomic
+			if (generationBroker<DataTag>::current() <= snapshot.get())
+			{
+				return false;
+			}
+			Data entry = {};
+			entry.validFrom = generationBroker<DataTag>::next();
+			entry.data = std::move(data);
+			dataHistory.emplace(dataHistory.begin(), std::move(entry));
+
+			auto cursor = dataHistory.begin();
+			auto end = dataHistory.end();
+			for(;cursor != end; ++cursor)
+			{
+				if (cursor->validFrom < snapshotOfData<DataTag>::oldest())
+				{
+					dataHistory.erase(cursor, end);
+					break;
+				}
+			}
+			return true;
+		}
+
 	};
 
 	struct uiData {};
@@ -271,6 +360,19 @@ namespace MainWindow
 	{
 		retainedData<TextStyle, uiData> textStyle;
 		retainedData<std::wstring, uiData> text;
+	};
+
+	struct VerticalSeparator
+	{
+		retainedData<std::wstring, uiData> leftComponent;
+		retainedData<FLOAT, uiData> percentFromLeft;
+	};
+
+
+	struct HorizontalSeparator
+	{
+		retainedData<std::wstring, uiData> topComponent;
+		retainedData<FLOAT, uiData> percentFromTop;
 	};
 
 	DWRITE_TEXT_ALIGNMENT d2d1From(TextAlignment::type value)
@@ -529,8 +631,262 @@ namespace MainWindow
 		}
 	};
 
+	struct D2D1VerticalSeparator
+	{
+		unique_com_d2d1solidcolorbrush blackBrush;
+		D2D1_SIZE_F layout;
+
+		D2D1VerticalLine QueryLayout(
+			D2D1Resources& resources, 
+			unique_com_d2d1hwndrendertarget& hwndRenderTarget, 
+			const snapshotOfData<uiData>& snapshot, 
+			const VerticalSeparator& separator, 
+			D2D1_SIZE_F cell, 
+			FLOAT gutter, 
+			const D2D1CellBox& available)
+		{
+			UNREFERENCED_PARAMETER(resources);
+			UNREFERENCED_PARAMETER(cell);
+			UNREFERENCED_PARAMETER(gutter);
+
+			unique_hresult hr;
+			TRACE_SCOPE("%!HRESULT!", hr.get());
+
+			// Create a black brush.
+			if (!blackBrush)
+			{
+				hr.reset(hwndRenderTarget->CreateSolidColorBrush(
+					D2D1::ColorF(
+						D2D1::ColorF::Black
+						),
+					blackBrush.replace()
+					));
+				if (!hr)
+				{
+					Trace(TRACE_LEVEL_ERROR, "CreateSolidColorBrush: %!HRESULT!", hr.get());
+					hr.throw_if();
+				}
+			}
+
+			auto& percentFromLeft = separator.percentFromLeft.get(snapshot);
+
+			D2D1VerticalLine result;
+			result.column = static_cast<size_t>(available.columns.begin + (percentFromLeft * available.columns.size()));
+			result.rows.begin = available.rows.begin;
+			result.rows.end = available.rows.end;
+			return result;
+		}
+
+		void Layout(
+			D2D1Resources& resources, 
+			unique_com_d2d1hwndrendertarget& hwndRenderTarget, 
+			const snapshotOfData<uiData>& snapshot, 
+			const VerticalSeparator& separator, 
+			D2D1_SIZE_F cell, 
+			FLOAT gutter, 
+			const D2D1CellBox& available)
+		{
+			UNREFERENCED_PARAMETER(resources);
+			unique_hresult hr;
+			TRACE_SCOPE("%!HRESULT!", hr.get());
+
+			// Create a black brush.
+			if (!blackBrush)
+			{
+				hr.reset(hwndRenderTarget->CreateSolidColorBrush(
+					D2D1::ColorF(
+						D2D1::ColorF::Black
+						),
+					blackBrush.replace()
+					));
+				if (!hr)
+				{
+					Trace(TRACE_LEVEL_ERROR, "CreateSolidColorBrush: %!HRESULT!", hr.get());
+					hr.throw_if();
+				}
+			}
+
+			auto& percentFromLeft = separator.percentFromLeft.get(snapshot);
+
+			D2D1VerticalLine result;
+			result.column = static_cast<size_t>(available.columns.begin + (percentFromLeft * available.columns.size()));
+			result.rows.begin = available.rows.begin;
+			result.rows.end = available.rows.end;
+
+			layout.width = gutter;
+			layout.height = (available.rows.end - available.rows.begin) * (cell.height + gutter);
+		}
+
+		void Draw(unique_com_d2d1hwndrendertarget& hwndRenderTarget, D2D1Resources& resources, D2D1_POINT_2F origin)
+		{
+			auto separator = D2D1::RectF(origin.x, origin.y, origin.x + layout.width, origin.y + layout.height);
+			hwndRenderTarget->DrawRectangle(
+				separator,
+				blackBrush.get()
+				);
+			UNREFERENCED_PARAMETER(resources);
+		}
+	};
+
+	struct D2D1HorizontalSeparator
+	{
+		unique_com_d2d1solidcolorbrush blackBrush;
+		D2D1_SIZE_F layout;
+
+		D2D1HorizontalLine QueryLayout(
+			D2D1Resources& resources, 
+			unique_com_d2d1hwndrendertarget& hwndRenderTarget, 
+			const snapshotOfData<uiData>& snapshot, 
+			const HorizontalSeparator& separator, 
+			D2D1_SIZE_F cell, 
+			FLOAT gutter, 
+			const D2D1CellBox& available)
+		{
+			UNREFERENCED_PARAMETER(resources);
+			UNREFERENCED_PARAMETER(cell);
+			UNREFERENCED_PARAMETER(gutter);
+
+			unique_hresult hr;
+			TRACE_SCOPE("%!HRESULT!", hr.get());
+
+			// Create a black brush.
+			if (!blackBrush)
+			{
+				hr.reset(hwndRenderTarget->CreateSolidColorBrush(
+					D2D1::ColorF(
+						D2D1::ColorF::Black
+						),
+					blackBrush.replace()
+					));
+				if (!hr)
+				{
+					Trace(TRACE_LEVEL_ERROR, "CreateSolidColorBrush: %!HRESULT!", hr.get());
+					hr.throw_if();
+				}
+			}
+
+			auto& percentFromTop = separator.percentFromTop.get(snapshot);
+
+			D2D1HorizontalLine result;
+			result.row = static_cast<size_t>(available.rows.begin + (percentFromTop * available.rows.size()));
+			result.columns.begin = available.columns.begin;
+			result.columns.end = available.columns.end;
+			return result;
+		}
+
+		void Layout(
+			D2D1Resources& resources, 
+			unique_com_d2d1hwndrendertarget& hwndRenderTarget, 
+			const snapshotOfData<uiData>& snapshot, 
+			const HorizontalSeparator& separator, 
+			D2D1_SIZE_F cell, 
+			FLOAT gutter, 
+			const D2D1CellBox& available)
+		{
+			UNREFERENCED_PARAMETER(resources);
+			unique_hresult hr;
+			TRACE_SCOPE("%!HRESULT!", hr.get());
+
+			// Create a black brush.
+			if (!blackBrush)
+			{
+				hr.reset(hwndRenderTarget->CreateSolidColorBrush(
+					D2D1::ColorF(
+						D2D1::ColorF::Black
+						),
+					blackBrush.replace()
+					));
+				if (!hr)
+				{
+					Trace(TRACE_LEVEL_ERROR, "CreateSolidColorBrush: %!HRESULT!", hr.get());
+					hr.throw_if();
+				}
+			}
+
+			auto& percentFromTop = separator.percentFromTop.get(snapshot);
+
+			D2D1HorizontalLine result;
+			result.row = static_cast<size_t>(available.rows.begin + (percentFromTop * available.rows.size()));
+			result.columns.begin = available.columns.begin;
+			result.columns.end = available.columns.end;
+
+			layout.height = gutter;
+			layout.width = (available.columns.end - available.columns.begin) * (cell.width + gutter);
+		}
+
+		void Draw(unique_com_d2d1hwndrendertarget& hwndRenderTarget, D2D1Resources& resources, D2D1_POINT_2F origin)
+		{
+			auto separator = D2D1::RectF(origin.x, origin.y, origin.x + layout.width, origin.y + layout.height);
+			hwndRenderTarget->DrawRectangle(
+				separator,
+				blackBrush.get()
+				);
+			UNREFERENCED_PARAMETER(resources);
+		}
+	};
+
+	struct Component
+	{
+		typedef
+			lib::of::one_of<lib::tv::factory<Label>::type>
+		Item;
+
+		typedef
+			lib::of::one_of<
+				lib::tv::factory<
+					std::vector<VerticalSeparator>, 
+					std::vector<HorizontalSeparator>, 
+					std::vector<Item>
+				>::type
+			>
+		Content;
+
+		retainedData<std::vector<Content>, uiData> contents;
+	};
+
+	struct Data
+	{
+		typedef
+			std::unordered_map<std::wstring, std::shared_ptr<Component>>
+		Components;
+
+		retainedData<Components, uiData> components; 
+	};
+
+	struct D2D1View
+	{
+		typedef
+			lib::of::one_of<lib::tv::factory<D2D1Label>::type>
+		D2D1Item;
+
+		typedef
+			lib::of::one_of<
+				lib::tv::factory<
+					std::vector<D2D1VerticalSeparator>, 
+					std::vector<D2D1HorizontalSeparator>, 
+					std::vector<D2D1Item>
+				>::type
+			>
+		D2D1Content;
+
+		typedef
+			std::unordered_map<std::wstring, std::vector<D2D1Content>>
+		D2D1Components;
+
+		D2D1Components components; 
+	};
+
 	struct type
 	{
+		struct Called
+		{
+			template<typename T>
+			void operator()(T&& )
+			{
+				MessageBeep(0);
+			}
+		};
+
 		type() 
 			: window(nullptr)
 			, instance(nullptr)
@@ -542,9 +898,25 @@ namespace MainWindow
 			style.fontName = L"Gabriola";
 			style.fontSize = 24.0f;
 			label.textStyle.set(style);
+
+			deviceList.percentFromLeft.set(.33f);
+
+			one_string.reset_at<0>(L"hi");
+			one_string.call_if_else<0>([&](std::wstring&) { MessageBeep(0); }, [&]{});
+
+			one_string.reset("low");
+
+			Called called;
+			one_string.call(called);
 		}
 
+		lib::of::one_of<lib::tv::factory<std::wstring, std::string>::type> one_string; 
+
+		Data data;
+		D2D1View view;
+
 		Label label;
+		VerticalSeparator deviceList;
 
 		D2D1Resources resources;
 		D2D1Label d2d1Label;
@@ -710,7 +1082,7 @@ namespace MainWindow
 		unique_com_xmlreader xmlreader;
 
 
-		LRESULT OnNCCreate(const lib::Context<type>* context, HWND hwnd, LPCREATESTRUCT createStruct)
+		LRESULT OnNCCreate(const lib::wnd::Context<type>* context, HWND hwnd, LPCREATESTRUCT createStruct)
 		{
 			unique_hresult hr;
 
@@ -721,7 +1093,7 @@ namespace MainWindow
 			window = hwnd;
 			instance = createStruct->hInstance;
 
-			lib::unique_gdi_release_dc screen(std::make_pair(nullptr, GetDC(nullptr)));
+			lib::wr::unique_gdi_release_dc screen(std::make_pair(nullptr, GetDC(nullptr)));
 			dpiScaleX = GetDeviceCaps(screen.get().second, LOGPIXELSX) / 96.0f;
 			dpiScaleY = GetDeviceCaps(screen.get().second, LOGPIXELSY) / 96.0f;
 
@@ -738,7 +1110,7 @@ namespace MainWindow
 			);
 
 
-			std::tie(hr, wiadevmgr2) = lib::ComCreateInstance<IWiaDevMgr2>(CLSID_WiaDevMgr2);
+			std::tie(hr, wiadevmgr2) = lib::wr::ComCreateInstance<IWiaDevMgr2>(CLSID_WiaDevMgr2);
 			if (!hr)
 			{
 				return FALSE;
@@ -763,7 +1135,7 @@ namespace MainWindow
 			while (unique_hresult::make(wiaenumdevinfo->Next( 1, wiapropertystorage.replace(), NULL )).suppress() == unique_hresult::cast(S_OK))
 			{
 				PROPVARIANT result[3] = {};
-				auto resultRange = lib::make_range(result);
+				auto resultRange = lib::rng::make_range(result);
 				ON_UNWIND_AUTO([&]{FreePropVariantArray(resultRange.size(), resultRange.begin());});
 
 				hr.reset(wiapropertystorage->ReadMultiple(resultRange.size(), query, resultRange.begin()));
@@ -791,7 +1163,7 @@ namespace MainWindow
 			UNREFERENCED_PARAMETER(context);
 		}
 
-		LRESULT OnCommand(const lib::Context<type>* context, HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
+		LRESULT OnCommand(const lib::wnd::Context<type>* context, HWND hwnd, int id, HWND hwndCtl, UINT codeNotify)
 		{
 			TRACE_SCOPE("id: %d", id);
 
@@ -813,7 +1185,7 @@ namespace MainWindow
 			UNREFERENCED_PARAMETER(hwndCtl);
 		}
 
-		LRESULT OnSize(const lib::Context<type>* context, HWND hwnd, UINT state, int cx, int cy)
+		LRESULT OnSize(const lib::wnd::Context<type>* context, HWND hwnd, UINT state, int cx, int cy)
 		{
 			size = D2D1::SizeF(
 				static_cast<FLOAT>(cx / dpiScaleX),
@@ -853,7 +1225,7 @@ namespace MainWindow
 			UNREFERENCED_PARAMETER(state);
 		}
 
-		LRESULT OnPaint(const lib::Context<type>* context, HWND hwnd)
+		LRESULT OnPaint(const lib::wnd::Context<type>* context, HWND hwnd)
 		{
 			LRESULT lresult = 0;
 			TRACE_SCOPE("lresult: %d", lresult);
@@ -862,7 +1234,7 @@ namespace MainWindow
 			HDC hdc = NULL;
 
 			hdc = BeginPaint(hwnd, &ps);
-			lib::unique_gdi_end_paint ender(std::make_pair(hwnd, &ps));
+			lib::wr::unique_gdi_end_paint ender(std::make_pair(hwnd, &ps));
 
 			DrawD2DContent().suppress();
 
@@ -870,7 +1242,7 @@ namespace MainWindow
 			UNREFERENCED_PARAMETER(context);
 		}
 
-		LRESULT OnDestroy(const lib::Context<type>* context, HWND hwnd)
+		LRESULT OnDestroy(const lib::wnd::Context<type>* context, HWND hwnd)
 		{
 			LRESULT lresult = 0;
 			TRACE_SCOPE("lresult: %d", lresult);
@@ -899,7 +1271,7 @@ namespace MainWindow
 		unique_com_wiadevmgr2 wiadevmgr2;
 	};
 
-	lib::window_class_traits_builder<type> window_class_traits(tag&&);
+	lib::wnd::window_class_traits_builder<type> window_class_traits(tag&&);
 
 	void window_class_register(PCWSTR windowClass, WNDCLASSEX* wcex, tag&&)
 	{
@@ -911,7 +1283,7 @@ namespace MainWindow
 	}
 
 	typedef
-		lib::window_class<tag>
+		lib::wnd::window_class<tag>
 	registrar;
 }
 
@@ -925,7 +1297,7 @@ namespace MainWindow
 //        In this function, we save the instance handle in a global variable and
 //        create and display the main program window.
 //
-std::pair<unique_winerror, lib::unique_close_window> 
+std::pair<unique_winerror, lib::wr::unique_close_window> 
 CreateMainWindow(HINSTANCE hInstance, PCWSTR windowClass, PCWSTR title, int nCmdShow)
 {
 	unique_winerror winerror;
@@ -933,9 +1305,9 @@ CreateMainWindow(HINSTANCE hInstance, PCWSTR windowClass, PCWSTR title, int nCmd
 
 	MainWindow::registrar::Register(windowClass);
 
-	lib::unique_close_window window;
+	lib::wr::unique_close_window window;
 
-	std::tie(winerror, window) = lib::winerror_and_close_window(
+	std::tie(winerror, window) = lib::wr::winerror_and_close_window(
 		CreateWindow(
 			windowClass, 
 			title, 
