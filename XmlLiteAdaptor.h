@@ -69,7 +69,7 @@ namespace com
 
 			storage_type storage()
 			{
-				return interface_storage(this, interface_tag(), object_tag());
+				return interface_storage(storage_get(), interface_tag(), object_tag());
 			}
 
 			template<typename Function>
@@ -234,7 +234,7 @@ namespace com
 
 			storage_type storage()
 			{
-				return interface_storage(this, interface_tag(), object_tag());
+				return interface_storage(storage_get(), interface_tag(), object_tag());
 			}
 
 			template<typename Function>

@@ -100,6 +100,11 @@ namespace MainWindow
 			auto unknownObject = lib::com::interface_cast<IUnknown>(new UnknownObject::object());
 			lib::wr::unique_com_unknown unknown;
 			unknownObject->QueryInterface(unknown.replace());
+
+			{
+				auto fileStream = lib::com::interface_cast<IStream>(new com::file::object(L"C:\\save\\source\\main.cpp"));
+				fileStream->Revert();
+			}
 #endif
 
 			lib::wr::unique_gdi_release_dc screen(std::make_pair(nullptr, GetDC(nullptr)));

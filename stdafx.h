@@ -5,6 +5,8 @@
 
 #pragma once
 
+#pragma warning(disable: 4503) // decorated name length exceeded, name was truncated
+
 #include "targetver.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -35,8 +37,6 @@
 #include <string>
 #include <unordered_map>
 
-#pragma warning(disable: 4503) // decorated name length exceeded, name was truncated
-
 namespace UnknownObject
 {
 	struct tag;
@@ -47,7 +47,8 @@ HRESULT function_contract_hresult(Function&& function)
 {
 	try
 	{
-		return std::forward<Function>(function)().suppress().get();
+		unique_hresult result = std::forward<Function>(function)();
+		return result.suppress().get();
 	}
 	catch(const std::bad_alloc&)
 	{
@@ -56,6 +57,10 @@ HRESULT function_contract_hresult(Function&& function)
 	catch(const unique_hresult::exception& e)
 	{
 		return e.get();
+	}
+	catch(const unique_winerror::exception& e)
+	{
+		return HRESULT_FROM_WIN32(e.get());
 	}
 }
 
@@ -118,16 +123,16 @@ namespace lib=LIBRARIES_NAMESPACE;
 //
 // This is the code in the PRE macro
 // 	auto uwfunc_ ## __LINE__ = [&] () -> void { 
-//     DoTraceMessage(TRACE_FLAG_ALL,  "%!STDPREFIX!" MSG " hr= %!HRESULT!", ..., hrCheck)
+//     DoTraceMessage(TRACE_FLAG_ALL,  "%!STDPREFIX! %s" MSG , Prefix, ...)
 // This is the code in the POST macro
 //  };
 //  uwfunc_ ## __LINE__();
 //	UNWINDER_NAMESPACE::unwinder<decltype(uwfunc_ ## __LINE__)> UnwinderName(std::addressof(uwfunc_ ## __LINE__));
 //                                 
 // begin_wpp config
-// USEPREFIX (TRACE_SCOPE,"%!STDPREFIX!");
+// USEPREFIX (TRACE_SCOPE,"%!STDPREFIX! %s", Prefix);
 // FUNC TRACE_SCOPE{FLAG=TRACE_FLAG_ALL, LEVEL=TRACE_LEVEL_VERBOSE}(MSG, ...);
 // end_wpp
-#define WPP_FLAG_LEVEL_PRE(FLAGS, LEVEL) auto MAKE_IDENTIFIER(trace_scope_func_) = [&] () -> void { 
-#define WPP_FLAG_LEVEL_POST(FLAGS, LEVEL) ; }; MAKE_IDENTIFIER(trace_scope_func_)(); UNWINDER_NAMESPACE::unwinder<decltype(MAKE_IDENTIFIER(trace_scope_func_))> MAKE_IDENTIFIER(trace_scope_unwind_)(std::addressof(MAKE_IDENTIFIER(trace_scope_func_)));
+#define WPP_FLAG_LEVEL_PRE(FLAGS, LEVEL) bool MAKE_IDENTIFIER(trace_scope_enter_) = true; auto MAKE_IDENTIFIER(trace_scope_func_) = [&] () -> void { auto* Prefix = MAKE_IDENTIFIER(trace_scope_enter_) ? "--> " : "<-- "; Prefix;
+#define WPP_FLAG_LEVEL_POST(FLAGS, LEVEL) ; }; MAKE_IDENTIFIER(trace_scope_func_)(); MAKE_IDENTIFIER(trace_scope_enter_) = false; UNWINDER_NAMESPACE::unwinder<decltype(MAKE_IDENTIFIER(trace_scope_func_))> MAKE_IDENTIFIER(trace_scope_unwind_)(std::addressof(MAKE_IDENTIFIER(trace_scope_func_)));
 
